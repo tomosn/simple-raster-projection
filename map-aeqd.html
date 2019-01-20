@@ -1,0 +1,175 @@
+﻿<!DOCTYPE HTML>
+<!--
+ Simple Raster Projection (Azimuthal Equidistant Projection) v0.0.1  2019-01-20
+    https://github.com/tomosn/simple-raster-projection
+ Copyright (C) 2019 T.Seno
+ All rights reserved.
+ @license MIT License (https://raw.githubusercontent.com/tomosn/simple-raster-projection/master/LICENSE)
+-->
+<html lang="ja">
+<head>
+<title>Azimuthal Equidistant Projection</title>
+<meta charset="utf-8">
+<script type="application/javascript" src="./js/raster-proj-renderer.js"></script>
+<script type="application/javascript" src="./lib/webgl-utils.js"></script>
+
+<!-- vertex shader -->
+<script id="shader-vs" type="x-shader/x-vertex">
+  precision highp float;
+  attribute float aCoordX;
+  attribute float aCoordY;
+  attribute vec2 aViewCoord;     //  投影後のView上のXY座標系での範囲に対応
+  varying vec2 vViewCoord;
+
+  void main() {
+    gl_Position = vec4(aCoordX, aCoordY, 1.0, 1.0);
+    vViewCoord = aViewCoord;
+  }
+</script>
+
+
+<!-- fragment shader -->
+<script id="shader-fs" type="x-shader/x-fragment">
+  precision highp float;
+  varying vec2 vViewCoord;    //  表示中のView上の座標値
+  uniform vec2 uDataCoord1;   //  画像データのSouthWestの座標値
+  uniform vec2 uDataCoord2;   //  画像データのNorthEastの座標値
+  uniform vec2 uProjCenter;   //  投影中心
+  uniform sampler2D uTexture;
+
+  const float pi = 3.14159265;
+  const float epsilon = 0.00000001;
+  const float xyRadius = pi;
+
+  //   AEQD逆変換
+  vec2 proj_inverse(vec2 center, vec2 xy) {
+    float sinPhi0 = sin(center.y);
+    float cosPhi0 = cos(center.y);
+
+    float c_rh = length(xy);
+
+    if ( c_rh < epsilon ) {
+      return center;
+    }
+    if ( c_rh - epsilon > pi ) {
+      c_rh = pi;
+    }
+    float cos_c = cos(c_rh);
+    float sin_c = sin(c_rh);
+
+    float phi = asin( clamp( cos_c * sinPhi0 + xy.y * sin_c * cosPhi0 / c_rh, -1.0, 1.0 ) );
+    float lam = mod( center.x + atan( xy.x * sin_c, c_rh * cosPhi0 * cos_c - xy.y * sinPhi0 * sin_c ) + pi, 2.0 * pi ) - pi;
+
+    return vec2(lam, phi);
+  }
+
+  //  XY座標の値が範囲内か否か
+  float validate_xy(vec2 xy) {
+    return 1.0 - step( xyRadius, length(xy) );
+  }
+
+  void main() {
+    float inXY = validate_xy(vViewCoord);
+    bool invalid = true;
+    if ( 0.0 < inXY ) {
+      vec2 lp = proj_inverse(uProjCenter, vViewCoord);                 //  緯度経度
+      vec2 ts = (lp - uDataCoord1) / (uDataCoord2 - uDataCoord1);      //  変換元画像上の座標
+      if ( 0.0 <= ts.x && 0.0 <= ts.y && ts.x <= 1.0 && ts.y <= 1.0) {
+        gl_FragColor = texture2D(uTexture, ts);
+        invalid = false;
+      }
+    }
+    if (invalid) {
+      discard;
+    }
+  }
+</script>
+
+
+\
+<!-- main -->
+<script type="text/javascript">
+  let gl;
+  let canvas;
+  let shaderProgram;
+
+  let requestId;
+
+  let textures = [];
+
+  let step = 0;
+
+
+  function getShaderStr(id) {
+      const elem = document.getElementById(id);
+      if (!elem) {
+        return null;
+      }
+      return elem.firstChild.textContent;
+  }
+
+  function loadImage(url, dataRect) {
+    const img = new Image();
+    img.onload = function() {
+      var tex = shaderProgram.createTexture(img);
+      if ( tex ) {
+        textures.push({ "textureId":tex, "dataRect":dataRect });
+      }
+    };
+    img.src = url;
+  }
+
+  function draw() {
+    requestId = requestAnimationFrame(draw);
+
+    step += 1;
+
+    //  投影中心の緯度経度
+    //var lon0 = 130.0;
+    const lon0 = step * 0.5;
+    const lat0 = 40.0;
+    const projCenter = [ lon0, lat0 ];
+
+    //  Viewの表示範囲の指定
+    //    View全体を表示する場合 [(-\pi,-\pi)-(\pi,\pi)]
+    const viewRect = [ -Math.PI, -Math.PI, +Math.PI, +Math.PI ];
+
+    //  投影中心の緯度経度とView上の表示範囲を指定する
+    shaderProgram.prepareRenderSurface(projCenter, viewRect);
+    for (let i = 0; i < textures.length; i++) {
+      const texture = textures[i];
+      //  dataRectで指定された緯度経度の矩形に対応するtextureを描画する
+      shaderProgram.renderSurface(texture.textureId, texture.dataRect);
+    }
+  }
+
+  function startup() {
+    canvas = document.getElementById("webglCanvas");
+    gl = WebGLUtils.setupWebGL(canvas);
+    if (!gl) {
+      alert('Failed to setup WebGL.');
+      return;
+    }
+
+    const vsStr = getShaderStr("shader-vs");
+    const fsStr = getShaderStr("shader-fs");
+
+    shaderProgram = new ShaderProgram(gl);
+    shaderProgram.init(vsStr, fsStr);
+
+    //  緯度経度座標系上の画像の読み込み
+    //    第２引数は、画像の範囲（緯度経度の矩形）
+    loadImage('./data/NE_180D_0_0.png', [-180.0, -90.0, 0.0, +90.0]);
+    loadImage('./data/NE_180D_1_0.png', [0.0, -90.0, +180.0, +90.0]);
+
+    draw();
+  }
+</script>
+
+</head>
+
+<body onload="startup();">
+  <canvas id="webglCanvas" width="512" height="512"></canvas>
+</body>
+
+</html>
