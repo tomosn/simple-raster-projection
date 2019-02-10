@@ -1,5 +1,5 @@
 /**
- * Simple Raster Projection v0.0.2  2019-02-10
+ * Graticule Renderer v0.0.1  2019-02-10
  *     https://github.com/tomosn/simple-raster-projection
  * Copyright (C) 2019 T.Seno
  * All rights reserved.
@@ -19,41 +19,15 @@ function ShaderProgram(gl) {
   this.locAttrCoordX_ = null;
   this.locAttrCoordY_ = null;
   this.locAttrViewCoord_ = null;
-  this.locUnifDataCoord1_ = null;
-  this.locUnifDataCoord2_ = null;
   this.locUnifProjCenter_ = null;
   this.locUnifViewLengthPerPixel_ = null;
   this.locUnifGraticuleIntervalDeg_ = null;
-  this.locUnifTexture_ = null;
 }
 
 ShaderProgram.DIMENSION = 2;
 
 ShaderProgram.BUFFER_SIZE = 4 * 4 * 2;
 
-
-/**
- * create texture
- * @param {Image} img
- * @return {texture}
- */
-ShaderProgram.prototype.createTexture = function(img) {
-  const tex = this.gl_.createTexture();
-  this.gl_.bindTexture(this.gl_.TEXTURE_2D, tex);
-  this.gl_.pixelStorei(this.gl_.UNPACK_FLIP_Y_WEBGL, true);
-
-  this.gl_.texParameteri(this.gl_.TEXTURE_2D, this.gl_.TEXTURE_MIN_FILTER, this.gl_.LINEAR);
-  this.gl_.texParameteri(this.gl_.TEXTURE_2D, this.gl_.TEXTURE_MAG_FILTER, this.gl_.LINEAR);
-
-  this.gl_.texParameteri(this.gl_.TEXTURE_2D, this.gl_.TEXTURE_WRAP_S, this.gl_.CLAMP_TO_EDGE);
-  this.gl_.texParameteri(this.gl_.TEXTURE_2D, this.gl_.TEXTURE_WRAP_T, this.gl_.CLAMP_TO_EDGE);
-
-  this.gl_.bindTexture(this.gl_.TEXTURE_2D, tex);
-  this.gl_.texImage2D(this.gl_.TEXTURE_2D, 0, this.gl_.RGBA, this.gl_.RGBA, this.gl_.UNSIGNED_BYTE, img);
-
-  this.gl_.bindTexture(this.gl_.TEXTURE_2D, null);
-  return tex;
-};
 
 /**
  * prepare render
@@ -65,7 +39,6 @@ ShaderProgram.prototype.prepareRender = function(projCenter, viewRect, canvasSiz
   this.gl_.viewport(0, 0, this.gl_.canvas.width, this.gl_.canvas.height);
   this.gl_.clear(this.gl_.COLOR_BUFFER_BIT);
 
-  this.gl_.enable(this.gl_.BLEND);
   this.gl_.blendFunc(this.gl_.SRC_ALPHA, this.gl_.ONE_MINUS_SRC_ALPHA);
 
   this.gl_.enableVertexAttribArray(this.locAttrCoordX_);
@@ -91,27 +64,8 @@ ShaderProgram.prototype.prepareRender = function(projCenter, viewRect, canvasSiz
   const sy = (viewRect[3] - viewRect[1]) / canvasSize[1];
   this.gl_.uniform2f(this.locUnifViewLengthPerPixel_, sx, sy);
 
-  this.gl_.uniform1f(this.locUnifGraticuleIntervalDeg_, -1.0);
-
   this.gl_.activeTexture(this.gl_.TEXTURE0);
 };
-
-/**
- * render texture
- * @param {texture} textureId
- * @param {Array} dataRect [longitude_west, latitude_south, longitude_east, latitude_north] 緯度経度座標系上の矩形
- */
-ShaderProgram.prototype.renderSurface = function(textureId, dataRect) {
-  this.gl_.bindTexture(this.gl_.TEXTURE_2D, textureId);
-
-  const toDeg = Math.PI / 180.0;
-  this.gl_.uniform2f(this.locUnifDataCoord1_, toDeg * dataRect[0], toDeg * dataRect[1]);
-  this.gl_.uniform2f(this.locUnifDataCoord2_, toDeg * dataRect[2], toDeg * dataRect[3]);
-
-  this.gl_.uniform1f(this.locUnifGraticuleIntervalDeg_, -1.0);
-
-  this.gl_.drawArrays(this.gl_.TRIANGLE_STRIP, 0, 4);
-}
 
 /**
  * render graticule
@@ -153,22 +107,18 @@ ShaderProgram.prototype.init = function(vertexShaderStr, fragmentShaderStr) {
   this.locAttrCoordY_ = this.gl_.getAttribLocation(this.program_, "aCoordY");
   this.locAttrViewCoord_ = this.gl_.getAttribLocation(this.program_, "aViewCoord");
 
-  this.locUnifDataCoord1_ = this.gl_.getUniformLocation(this.program_, "uDataCoord1");
-  this.locUnifDataCoord2_ = this.gl_.getUniformLocation(this.program_, "uDataCoord2");
-
   this.locUnifProjCenter_ = this.gl_.getUniformLocation(this.program_, "uProjCenter");
 
   this.locUnifViewLengthPerPixel_ = this.gl_.getUniformLocation(this.program_, "uViewLengthPerPixel");
 
   this.locUnifGraticuleIntervalDeg_ = this.gl_.getUniformLocation(this.program_, "uGraticuleIntervalDeg");
 
-  this.locUnifTexture_ = this.gl_.getUniformLocation(this.program_, "uTexture");
-
   const buff = this.gl_.createBuffer();
   this.gl_.bindBuffer(this.gl_.ARRAY_BUFFER, buff);
   this.gl_.bufferData(this.gl_.ARRAY_BUFFER, ShaderProgram.BUFFER_SIZE * ShaderProgram.DIMENSION * 4, this.gl_.DYNAMIC_DRAW);
 
-  this.gl_.clearColor(1.0, 1.0, 1.0, 1.0);
+  //this.gl_.clearColor(1.0, 1.0, 1.0, 1.0);
+  this.gl_.clearColor(0.0, 0.0, 0.0, 1.0);
 
   this.gl_.frontFace(this.gl_.CCW);
   this.gl_.enable(this.gl_.CULL_FACE);

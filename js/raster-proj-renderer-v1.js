@@ -1,5 +1,5 @@
 /**
- * Simple Raster Projection v0.0.2  2019-02-10
+ * Simple Raster Projection v0.0.1  2019-01-20
  *     https://github.com/tomosn/simple-raster-projection
  * Copyright (C) 2019 T.Seno
  * All rights reserved.
@@ -22,8 +22,6 @@ function ShaderProgram(gl) {
   this.locUnifDataCoord1_ = null;
   this.locUnifDataCoord2_ = null;
   this.locUnifProjCenter_ = null;
-  this.locUnifViewLengthPerPixel_ = null;
-  this.locUnifGraticuleIntervalDeg_ = null;
   this.locUnifTexture_ = null;
 }
 
@@ -59,13 +57,11 @@ ShaderProgram.prototype.createTexture = function(img) {
  * prepare render
  * @param {Array} projCenter [longitude, latitude] (degrees)
  * @param {Array} viewRect [x_left, y_bottom, x_right, y_top]
- * @param {Array} canvasSize [width, height]
  */
-ShaderProgram.prototype.prepareRender = function(projCenter, viewRect, canvasSize) {
+ShaderProgram.prototype.prepareRenderSurface = function(projCenter, viewRect) {
   this.gl_.viewport(0, 0, this.gl_.canvas.width, this.gl_.canvas.height);
   this.gl_.clear(this.gl_.COLOR_BUFFER_BIT);
 
-  this.gl_.enable(this.gl_.BLEND);
   this.gl_.blendFunc(this.gl_.SRC_ALPHA, this.gl_.ONE_MINUS_SRC_ALPHA);
 
   this.gl_.enableVertexAttribArray(this.locAttrCoordX_);
@@ -87,12 +83,6 @@ ShaderProgram.prototype.prepareRender = function(projCenter, viewRect, canvasSiz
   const toDeg = Math.PI / 180.0;
   this.gl_.uniform2f(this.locUnifProjCenter_, toDeg * projCenter[0], toDeg * projCenter[1]);
 
-  const sx = (viewRect[2] - viewRect[0]) / canvasSize[0];
-  const sy = (viewRect[3] - viewRect[1]) / canvasSize[1];
-  this.gl_.uniform2f(this.locUnifViewLengthPerPixel_, sx, sy);
-
-  this.gl_.uniform1f(this.locUnifGraticuleIntervalDeg_, -1.0);
-
   this.gl_.activeTexture(this.gl_.TEXTURE0);
 };
 
@@ -108,17 +98,6 @@ ShaderProgram.prototype.renderSurface = function(textureId, dataRect) {
   this.gl_.uniform2f(this.locUnifDataCoord1_, toDeg * dataRect[0], toDeg * dataRect[1]);
   this.gl_.uniform2f(this.locUnifDataCoord2_, toDeg * dataRect[2], toDeg * dataRect[3]);
 
-  this.gl_.uniform1f(this.locUnifGraticuleIntervalDeg_, -1.0);
-
-  this.gl_.drawArrays(this.gl_.TRIANGLE_STRIP, 0, 4);
-}
-
-/**
- * render graticule
- * @param {Float} intervalDeg [degrees]
- */
-ShaderProgram.prototype.renderGraticule = function(intervalDeg) {
-  this.gl_.uniform1f(this.locUnifGraticuleIntervalDeg_, intervalDeg);
   this.gl_.drawArrays(this.gl_.TRIANGLE_STRIP, 0, 4);
 }
 
@@ -157,10 +136,6 @@ ShaderProgram.prototype.init = function(vertexShaderStr, fragmentShaderStr) {
   this.locUnifDataCoord2_ = this.gl_.getUniformLocation(this.program_, "uDataCoord2");
 
   this.locUnifProjCenter_ = this.gl_.getUniformLocation(this.program_, "uProjCenter");
-
-  this.locUnifViewLengthPerPixel_ = this.gl_.getUniformLocation(this.program_, "uViewLengthPerPixel");
-
-  this.locUnifGraticuleIntervalDeg_ = this.gl_.getUniformLocation(this.program_, "uGraticuleIntervalDeg");
 
   this.locUnifTexture_ = this.gl_.getUniformLocation(this.program_, "uTexture");
 

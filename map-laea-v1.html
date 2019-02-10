@@ -1,6 +1,6 @@
 ﻿<!DOCTYPE HTML>
 <!--
- Simple Raster Projection (Lambert Azimuthal Equal-Area Projection) v0.0.2  2019-02-10
+ Simple Raster Projection (Lambert Azimuthal Equal-Area Projection) v0.0.1  2019-01-20
     https://github.com/tomosn/simple-raster-projection
  Copyright (C) 2019 T.Seno
  All rights reserved.
@@ -10,7 +10,7 @@
 <head>
 <title>Lambert Azimuthal Equal-Area Projection</title>
 <meta charset="utf-8">
-<script type="application/javascript" src="./js/raster-proj-renderer.js"></script>
+<script type="application/javascript" src="./js/raster-proj-renderer-v1.js"></script>
 <script type="application/javascript" src="./lib/webgl-utils.js"></script>
 
 <!-- vertex shader -->
@@ -35,8 +35,6 @@
   uniform vec2 uDataCoord1;   //  画像データのSouthWestの座標値
   uniform vec2 uDataCoord2;   //  画像データのNorthEastの座標値
   uniform vec2 uProjCenter;   //  投影中心
-  uniform vec2 uViewLengthPerPixel;    // 画面1pixelあたりのXY座標系の長さ
-  uniform float uGraticuleIntervalDeg;   //  緯度経度線の描画間隔[degrees]
   uniform sampler2D uTexture;
 
   const float pi = 3.14159265;
@@ -74,92 +72,25 @@
     return 1.0 - step( xyRadius, length(xy) );
   }
 
-  //  緯度経度線描画のための関数
-  vec2 graticule_level(vec2 lp, vec2 baseLonLat) {
-    vec2 lonlat = degrees(lp);
-    if ( 135.0 < abs(baseLonLat.x) ) {
-      lonlat.x = mod(lonlat.x + 360.0, 360.0);     //  連続性を保つため日付変更線付近では基準を変更
-    }
-    return floor(lonlat / uGraticuleIntervalDeg);
-  }
-
-  //   緯度経度線描画
-  bool render_graticule() {
-    if ( validate_xy(vViewCoord) == 0.0 ) {
-      return false;
-    }
-
-    vec2 lp = proj_inverse(uProjCenter, vViewCoord);                 //  緯度経度
-    vec2 baseLonLat = degrees(lp);      //  該当ピクセルの緯度経度
-    float absLat = abs(baseLonLat.y);
-    if (81.0 < absLat) {
-      return false;   //  両極付近は描画対象外
-    }
-
-    vec2 v1 = vViewCoord + vec2(0.0, uViewLengthPerPixel.y);
-    vec2 v3 = vViewCoord + vec2(-uViewLengthPerPixel.x, 0.0);
-    vec2 v5 = vViewCoord + vec2(uViewLengthPerPixel.x, 0.0);
-    vec2 v7 = vViewCoord + vec2(0.0, -uViewLengthPerPixel.y);
-
-    if ( validate_xy(v1) == 0.0 ||  validate_xy(v3) == 0.0 || validate_xy(v5) == 0.0 || validate_xy(v7) == 0.0) {
-      return false;
-    }
-
-    vec2 z = -4.0 * graticule_level(lp, baseLonLat);
-    z += graticule_level(proj_inverse(uProjCenter, v1), baseLonLat);
-    z += graticule_level(proj_inverse(uProjCenter, v3), baseLonLat);
-    z += graticule_level(proj_inverse(uProjCenter, v5), baseLonLat);
-    z += graticule_level(proj_inverse(uProjCenter, v7), baseLonLat);
-
-    vec2 col = min(abs(z) / 2.0, 1.0);
-    float alpha = 0.0;
-    if (80.0 < absLat) {
-      alpha = col.y;    //  ±80度より極付近は経線は描画しない
-    } else {
-      alpha = max(col.x, col.y);
-    }
-
-    if (alpha == 0.0) {
-      return false;
-    }
-
-    vec3 lineColor = vec3(0.8);
-    gl_FragColor = vec4(lineColor, alpha * 0.4);
-
-    return true;
-  }
-
-  //  テクスチャ描画
-  bool render_surface() {
-    if ( validate_xy(vViewCoord) == 0.0 ) {
-      return false;
-    }
-
-    //   画像の描画
-    vec2 lp = proj_inverse(uProjCenter, vViewCoord);                 //  緯度経度
-    vec2 ts = (lp - uDataCoord1) / (uDataCoord2 - uDataCoord1);      //  変換元画像上の座標
-    if ( 0.0 <= ts.x && 0.0 <= ts.y && ts.x <= 1.0 && ts.y <= 1.0) {
-      gl_FragColor = texture2D(uTexture, ts);
-      return true;
-    } else {
-      return false;
-    }
-  }
-
   void main() {
-    bool rendered = false;
-    if ( 0.0 < uGraticuleIntervalDeg ) {
-      rendered = render_graticule();
-    } else {
-      rendered = render_surface();
+    float inXY = validate_xy(vViewCoord);
+    bool invalid = true;
+    if ( 0.0 < inXY ) {
+      vec2 lp = proj_inverse(uProjCenter, vViewCoord);                 //  緯度経度
+      vec2 ts = (lp - uDataCoord1) / (uDataCoord2 - uDataCoord1);      //  変換元画像上の座標
+      if ( 0.0 <= ts.x && 0.0 <= ts.y && ts.x <= 1.0 && ts.y <= 1.0) {
+        gl_FragColor = texture2D(uTexture, ts);
+        invalid = false;
+      }
     }
-    if ( !rendered ) {
+    if (invalid) {
       discard;
     }
   }
 </script>
 
 
+\
 <!-- main -->
 <script type="text/javascript">
   let gl;
@@ -169,7 +100,6 @@
   let requestId;
 
   let textures = [];
-  let canavsSize = null;
 
   let step = 0;
 
@@ -209,13 +139,12 @@
     const viewRect = [ -2.0, -2.0, +2.0, +2.0 ];
 
     //  投影中心の緯度経度とView上の表示範囲を指定する
-    shaderProgram.prepareRender(projCenter, viewRect, canvasSize);
+    shaderProgram.prepareRenderSurface(projCenter, viewRect);
     for (let i = 0; i < textures.length; i++) {
       const texture = textures[i];
       //  dataRectで指定された緯度経度の矩形に対応するtextureを描画する
       shaderProgram.renderSurface(texture.textureId, texture.dataRect);
     }
-    shaderProgram.renderGraticule(20.0);
   }
 
   function startup() {
@@ -225,8 +154,6 @@
       alert('Failed to setup WebGL.');
       return;
     }
-
-    canvasSize = [ parseInt(canvas.width), parseInt(canvas.height) ];
 
     const vsStr = getShaderStr("shader-vs");
     const fsStr = getShaderStr("shader-fs");

@@ -1,6 +1,6 @@
 ﻿<!DOCTYPE HTML>
 <!--
- Simple Raster Projection (Lambert Azimuthal Equal-Area Projection) v0.0.2  2019-02-10
+ Simple Raster Projection (Transverse Mercator Projection) v0.0.2  2019-02-10
     https://github.com/tomosn/simple-raster-projection
  Copyright (C) 2019 T.Seno
  All rights reserved.
@@ -8,7 +8,7 @@
 -->
 <html lang="ja">
 <head>
-<title>Lambert Azimuthal Equal-Area Projection</title>
+<title>Transverse Mercator Projection</title>
 <meta charset="utf-8">
 <script type="application/javascript" src="./js/raster-proj-renderer.js"></script>
 <script type="application/javascript" src="./lib/webgl-utils.js"></script>
@@ -41,37 +41,26 @@
 
   const float pi = 3.14159265;
   const float epsilon = 0.00000001;
-  const float xyRadius = 2.0;
+  const float xyRadius = pi;
 
-  //   LAEA逆変換
-  vec2 proj_inverse(vec2 center, vec2 xy)
-  {
-    float sinPhi0 = sin(center.y);
-    float cosPhi0 = cos(center.y);
+  //   TMERC逆変換
+  vec2 proj_inverse(vec2 center, vec2 xy) {
+    float d = xy.y + center.y;
 
-    float rho = length(xy);
+    float ep = exp(xy.x);
+    float em = exp(-xy.x);
+    float ch = (ep + em) / 2.0;
+    float sh = (ep - em) / 2.0;
 
-    if ( rho < epsilon ) {
-      return center;
-    }
-    if ( rho - epsilon > xyRadius ) {
-      rho = xyRadius;
-    }
-
-    float c_rh = 2.0 * asin( clamp( rho/2.0, -1.0, 1.0) );
-
-    float cos_c = cos(c_rh);
-    float sin_c = sin(c_rh);
-
-    float phi = asin( clamp( cos_c * sinPhi0 + xy.y * sin_c * cosPhi0 / rho, -1.0, 1.0 ) );
-    float lam = mod( center.x + atan( xy.x * sin_c, rho * cosPhi0 * cos_c - xy.y * sinPhi0 * sin_c ) + pi, 2.0 * pi ) - pi;
+    float phi = asin( clamp( sin(d) / ch, -1.0, 1.0 ) );
+    float lam = mod( center.x + atan( sh, cos(d) ) + pi, 2.0 * pi ) - pi;
 
     return vec2(lam, phi);
   }
 
   //  XY座標の値が範囲内か否か
   float validate_xy(vec2 xy) {
-    return 1.0 - step( xyRadius, length(xy) );
+    return 1.0;
   }
 
   //  緯度経度線描画のための関数
@@ -205,8 +194,7 @@
     const projCenter = [ lon0, lat0 ];
 
     //  Viewの表示範囲の指定
-    //    View全体を表示する場合 [(-2,-2)-(2,2)]
-    const viewRect = [ -2.0, -2.0, +2.0, +2.0 ];
+    const viewRect = [ -Math.PI, -Math.PI, +Math.PI, +Math.PI ];
 
     //  投影中心の緯度経度とView上の表示範囲を指定する
     shaderProgram.prepareRender(projCenter, viewRect, canvasSize);
